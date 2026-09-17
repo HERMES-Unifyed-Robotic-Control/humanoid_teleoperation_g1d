@@ -72,6 +72,16 @@ cd /home/unitree/xr_teleoperate_g1d
 
 `--use-waist` 只把右摇杆 X 映射到 14 号 waist pitch，不用摇杆控制 12 号 waist yaw。按 B/Q 正常退出时，回零流程会以限速方式将双臂、waist yaw 和 waist pitch 一并恢复到 0。`taskset -c 3-7` 可选，用于把进程及其线程限制在机器人逻辑 CPU 3–7，减少与其他服务争抢 CPU；它不影响控制映射，也不是启动遥操的必要条件。
 
+当前默认的内部 Dex1 从 `rt/lowstate` 读取 `motor_state[31]`（左）和 `motor_state[33]`（右），并通过相同下标写入 `rt/lowcmd`；独立串口 `dex1_1_service` 才使用 `rt/dex1/{left,right}/{cmd,state}`。可在另一终端运行只读监测工具：
+
+```bash
+cd /home/unitree/xr_teleoperate_g1d
+sudo /home/unitree/miniconda3/envs/tv/bin/python tools/monitor_dex1.py \
+  --mode internal --network-interface eth0
+```
+
+内部遥操命令范围为 `0.0–5.4 rad`。分别将两个夹爪保持在全闭和全开位置数秒，记录监测输出的稳定 `q`；标定方向应为全闭接近 `0`、全开接近上限，两侧端点允许有少量机械差异。监测程序只订阅状态，不发送控制命令，按 `Ctrl-C` 会打印本次采样的均值和范围。
+
 PICO 端首次先分别访问 `https://192.168.10.104:8012` 和 `https://192.168.10.104:60001` 并接受证书，再打开启动器打印的 `https://vuer.ai?ws=wss://192.168.10.104:8012`；若 PICO 无公网访问，使用本地备用地址。不要同时打开多个 XR 页面。等待终端出现 `websocket is connected` 后，可完全使用手柄操作：右 A 启动；左 Y 开始一个 episode，再按左 Y 停止并保存，确认播报保存完成后可继续按左 Y 录制下一个 episode；右 B 结束整个遥操。机器人扬声器默认使用普通话播报准备、按键、采集、保存和退出状态。中文文本使用“诶键、比键、歪键”，避免中文音色跳过拉丁字母。可用 `VOICE_LANGUAGE=zh`、`VOICE_LANGUAGE=en` 或 `VOICE_LANGUAGE=bilingual` 选择语言；不需要语音时追加 `--no-voice`。键盘 `R/S/Q` 继续保留。
 
 ## 数采内容

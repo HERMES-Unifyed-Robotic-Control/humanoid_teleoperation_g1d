@@ -114,6 +114,8 @@ XR 服务绑定 `0.0.0.0:8012`，所以使用机器人 `wlan0` 地址访问是�
 
 `--use-waist` 只启用 14 号 waist pitch 的右摇杆 X 控制；12 号 waist yaw 不跟随摇杆。按 B/Q 正常退出会以限速方式将双臂、waist yaw 和 waist pitch 一并回到 0。`taskset -c 3-7` 只是可选的 CPU 亲和性设置，在本机 0–7 共 8 个逻辑 CPU 中将遥操进程限制到 3–7，不是功能必需项。
 
+内部 Dex1 的反馈位于 `rt/lowstate`：左夹爪为 `motor_state[31]`，右夹爪为 `motor_state[33]`；命令位于 `rt/lowcmd` 的相同下标。用 `sudo /home/unitree/miniconda3/envs/tv/bin/python tools/monitor_dex1.py --mode internal --network-interface eth0` 可只读观察两侧 `q/dq/tau_est/motorstate/temperature`，用于记录全闭和全开端点。遥操采用 `0.0–5.4 rad` 的保守命令范围。
+
 ## 数据位置与检查
 
 上述命令的数据目录是：
