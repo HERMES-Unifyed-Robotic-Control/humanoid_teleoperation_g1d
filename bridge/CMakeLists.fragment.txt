@@ -1,0 +1,4 @@
+# Add these lines to /home/unitree/unitree_sdk2/example/g1/CMakeLists.txt,
+# then build unitree_sdk2 normally.
+add_executable(g1d_agv_bridge g1d/g1d_agv_bridge.cpp)
+target_link_libraries(g1d_agv_bridge unitree_sdk2)
