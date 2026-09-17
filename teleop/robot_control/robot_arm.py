@@ -58,6 +58,7 @@ class G1_29_ArmController:
 
         self.all_motor_q = None
         self.arm_velocity_limit = 30.0
+        self.waist_yaw_velocity_limit = 0.5
         self.control_dt = 1.0 / 250.0
 
         self.use_waist = use_waist
@@ -83,6 +84,7 @@ class G1_29_ArmController:
         self.msg.mode_machine = self.get_mode_machine()
 
         self.all_motor_q = self.get_current_motor_q()
+        self.waist_yaw_target = float(self.all_motor_q[G1_29_JointIndex.kWaistYaw.value])
         logger_mp.info(f"Current all body motor state q:\n{self.all_motor_q} \n")
         logger_mp.info(f"Current two arms motor state q:\n{self.get_current_dual_arm_q()}\n")
         logger_mp.info("Lock all joints except two arms...")
@@ -96,6 +98,11 @@ class G1_29_ArmController:
                 else:
                     self.msg.motor_cmd[id].kp = self.kp_low
                     self.msg.motor_cmd[id].kd = self.kd_low
+            elif self._Is_waistYaw(id):
+                # G1-D official g1d_arm_example.cpp uses Kp=60, Kd=1
+                # for motor 12 (waist yaw).
+                self.msg.motor_cmd[id].kp = 60
+                self.msg.motor_cmd[id].kd = 1.0
             else:
                 if self._Is_weak_motor(id):
                     if self._Is_waistPitch(id):
@@ -148,6 +155,7 @@ class G1_29_ArmController:
             with self.ctrl_lock:
                 q_target     = self.q_target.copy()
                 tauff_target = self.tauff_target.copy()
+                waist_yaw_target = self.waist_yaw_target
 
             if self.simulation_mode:
                 cliped_q_target = q_target
@@ -158,6 +166,16 @@ class G1_29_ArmController:
                 self.msg.motor_cmd[id].q = cliped_q_target[idx]
                 self.msg.motor_cmd[id].dq = 0
                 self.msg.motor_cmd[id].tau = tauff_target[idx]
+
+            waist_yaw_index = G1_29_JointIndex.kWaistYaw.value
+            current_waist_yaw = self.get_current_waist_yaw_q()
+            max_yaw_step = self.waist_yaw_velocity_limit * self.control_dt
+            waist_yaw_cmd = current_waist_yaw + np.clip(
+                waist_yaw_target - current_waist_yaw, -max_yaw_step, max_yaw_step
+            )
+            self.msg.motor_cmd[waist_yaw_index].q = waist_yaw_cmd
+            self.msg.motor_cmd[waist_yaw_index].dq = 0.0
+            self.msg.motor_cmd[waist_yaw_index].tau = 0.0
 
             self.msg.crc = self.crc.Crc(self.msg)
             self.lowcmd_publisher.Write(self.msg)
@@ -199,6 +217,10 @@ class G1_29_ArmController:
     def get_current_waist_q(self):
         data = self.lowstate_buffer.GetData()
         return np.array([data.motor_state[id].q for id in G1_29_Waist_JointIndex])
+
+    def get_current_waist_yaw_q(self):
+        data = self.lowstate_buffer.GetData()
+        return float(data.motor_state[G1_29_JointIndex.kWaistYaw.value].q)
     
     def get_current_arm_waist_q(self):
         '''Return current state q of the left and right arm and waist motors.'''
@@ -219,10 +241,12 @@ class G1_29_ArmController:
         current_attempts = 0
         with self.ctrl_lock:
             self.q_target = np.zeros(15)
+            self.waist_yaw_target = 0.0
         while current_attempts < max_attempts:
             current_q = self.get_current_arm_waist_q()
-            if np.all(np.abs(current_q) < tolerance):
-                logger_mp.info("[G1_29_ArmController] Both arms and waist have reached the home position.")
+            current_waist_yaw = self.get_current_waist_yaw_q()
+            if np.all(np.abs(current_q) < tolerance) and abs(current_waist_yaw) < tolerance:
+                logger_mp.info("[G1_29_ArmController] Both arms, waist yaw and waist pitch have reached the home position.")
                 break
             current_attempts += 1
             time.sleep(0.05)
@@ -266,6 +290,9 @@ class G1_29_ArmController:
             G1_29_Waist_JointIndex.kWaistPitch.value
         ]
         return motor_index.value in waist_motors
+
+    def _Is_waistYaw(self, motor_index):
+        return motor_index.value == G1_29_JointIndex.kWaistYaw.value
 class G1_29_Arm_JointIndex(IntEnum):
     # Left arm
     kLeftShoulderPitch = 15
@@ -386,6 +413,7 @@ class G1_29_Arm_Internal_Dex1_Controller:
 
         self.control_dt = 1.0 / 250.0
         self.arm_velocity_limit = 30.0
+        self.waist_yaw_velocity_limit = 0.5
         self.running = True
 
         self.kp_high = 300.0
@@ -420,6 +448,7 @@ class G1_29_Arm_Internal_Dex1_Controller:
         self.msg.mode_machine = self.get_mode_machine()
 
         self.all_motor_q = self.get_current_motor_q()
+        self.waist_yaw_target = float(self.all_motor_q[G1_29_JointIndex.kWaistYaw.value])
         self.gripper_q_target = self.get_current_dual_gripper_q()
         logger_mp.info(f"Current all body motor state q:\n{self.all_motor_q} \n")
         logger_mp.info(f"Current arm and waist motor state q:\n{self.get_current_arm_waist_q()}\n")
@@ -444,6 +473,12 @@ class G1_29_Arm_Internal_Dex1_Controller:
                 cmd.mode = 1
                 cmd.kp = self.kp_wrist if self._Is_wrist_motor(id) else self.kp_low
                 cmd.kd = self.kd_wrist if self._Is_wrist_motor(id) else self.kd_low
+            elif self._Is_waistYaw(id):
+                # G1-D official g1d_arm_example.cpp uses Kp=60, Kd=1
+                # for motor 12 (waist yaw).
+                cmd.mode = 1
+                cmd.kp = 60
+                cmd.kd = 1.0
             else:
                 cmd.mode = 1
                 if self._Is_weak_motor(id):
@@ -489,6 +524,7 @@ class G1_29_Arm_Internal_Dex1_Controller:
             with self.ctrl_lock:
                 q_target = self.q_target.copy()
                 tauff_target = self.tauff_target.copy()
+                waist_yaw_target = self.waist_yaw_target
             with self.left_gripper_value_in.get_lock():
                 left_gripper_value = self.left_gripper_value_in.value
             with self.right_gripper_value_in.get_lock():
@@ -525,6 +561,16 @@ class G1_29_Arm_Internal_Dex1_Controller:
                 self.msg.motor_cmd[id].q = cliped_q_target[idx]
                 self.msg.motor_cmd[id].dq = 0.0
                 self.msg.motor_cmd[id].tau = tauff_target[idx]
+
+            waist_yaw_index = G1_29_JointIndex.kWaistYaw.value
+            current_waist_yaw = self.get_current_waist_yaw_q()
+            max_yaw_step = self.waist_yaw_velocity_limit * self.control_dt
+            waist_yaw_cmd = current_waist_yaw + np.clip(
+                waist_yaw_target - current_waist_yaw, -max_yaw_step, max_yaw_step
+            )
+            self.msg.motor_cmd[waist_yaw_index].q = waist_yaw_cmd
+            self.msg.motor_cmd[waist_yaw_index].dq = 0.0
+            self.msg.motor_cmd[waist_yaw_index].tau = 0.0
 
             for idx, id in enumerate((self.left_index, self.right_index)):
                 self.msg.motor_cmd[id].mode = 1
@@ -583,6 +629,10 @@ class G1_29_Arm_Internal_Dex1_Controller:
         data = self.lowstate_buffer.GetData()
         return np.array([data.motor_state[id].q for id in G1_29_Waist_JointIndex])
 
+    def get_current_waist_yaw_q(self):
+        data = self.lowstate_buffer.GetData()
+        return float(data.motor_state[G1_29_JointIndex.kWaistYaw.value].q)
+
     def get_current_arm_waist_q(self):
         data = self.lowstate_buffer.GetData()
         return np.array([data.motor_state[id].q for id in G1_29_Arm_Waist_JointIndex])
@@ -602,10 +652,12 @@ class G1_29_Arm_Internal_Dex1_Controller:
         current_attempts = 0
         with self.ctrl_lock:
             self.q_target = np.zeros(15)
+            self.waist_yaw_target = 0.0
         while current_attempts < max_attempts:
             current_q = self.get_current_arm_waist_q()
-            if np.all(np.abs(current_q) < tolerance):
-                logger_mp.info("[G1_29_Arm_Internal_Dex1_Controller] Both arms and waist have reached the home position.")
+            current_waist_yaw = self.get_current_waist_yaw_q()
+            if np.all(np.abs(current_q) < tolerance) and abs(current_waist_yaw) < tolerance:
+                logger_mp.info("[G1_29_Arm_Internal_Dex1_Controller] Both arms, waist yaw and waist pitch have reached the home position.")
                 break
             current_attempts += 1
             time.sleep(0.05)
@@ -641,3 +693,6 @@ class G1_29_Arm_Internal_Dex1_Controller:
 
     def _Is_waistPitch(self, motor_index):
         return motor_index.value in [G1_29_Waist_JointIndex.kWaistPitch.value]
+
+    def _Is_waistYaw(self, motor_index):
+        return motor_index.value == G1_29_JointIndex.kWaistYaw.value
