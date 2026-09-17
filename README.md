@@ -70,7 +70,7 @@ cd /home/unitree/xr_teleoperate_g1d
 
 启动器默认使用机器人已有的 `/home/unitree/miniconda3/envs/tv/bin/python`，参数为 controller、immersive 双目画面、G1、**内部 Dex1**、mobile_lift、腰部 Pitch 和 headless；PICO 可访问的 WebRTC 地址固定为机器人无线口 `192.168.10.104:60001`。追加参数会继续传给主程序。需要使用其他环境时可设置 `PYTHON_BIN=/path/to/python`；需要透视模式时设置 `DISPLAY_MODE=pass-through`。只有连接了独立串口 Dex1 板卡时，才设置 `EE_MODE=dex1` 并确保对应服务已经正常运行。
 
-PICO 端首次先分别访问 `https://192.168.10.104:8012` 和 `https://192.168.10.104:60001` 并接受证书，再打开启动器打印的 `https://vuer.ai?ws=wss://192.168.10.104:8012`；若 PICO 无公网访问，使用本地备用地址。不要同时打开多个 XR 页面。等待终端出现 `websocket is connected` 后，可完全使用手柄操作：右 A 启动、左 Y 开关 episode、右 B 退出。机器人扬声器默认先用普通话、再用英文播报准备、按键、采集、保存和退出状态。中文文本使用“诶键、比键、歪键”，避免中文音色跳过拉丁字母。可用 `VOICE_LANGUAGE=zh`、`VOICE_LANGUAGE=en` 或 `VOICE_LANGUAGE=bilingual` 选择语言；不需要语音时追加 `--no-voice`。键盘 `R/S/Q` 继续保留。
+PICO 端首次先分别访问 `https://192.168.10.104:8012` 和 `https://192.168.10.104:60001` 并接受证书，再打开启动器打印的 `https://vuer.ai?ws=wss://192.168.10.104:8012`；若 PICO 无公网访问，使用本地备用地址。不要同时打开多个 XR 页面。等待终端出现 `websocket is connected` 后，可完全使用手柄操作：右 A 启动；左 Y 开始一个 episode，再按左 Y 停止并保存，确认播报保存完成后可继续按左 Y 录制下一个 episode；右 B 结束整个遥操。机器人扬声器默认使用普通话播报准备、按键、采集、保存和退出状态。中文文本使用“诶键、比键、歪键”，避免中文音色跳过拉丁字母。可用 `VOICE_LANGUAGE=zh`、`VOICE_LANGUAGE=en` 或 `VOICE_LANGUAGE=bilingual` 选择语言；不需要语音时追加 `--no-voice`。键盘 `R/S/Q` 继续保留。
 
 ## 数采内容
 

@@ -6,7 +6,7 @@ XR_TELEOP_ROOT="${XR_TELEOP_ROOT:-${PROJECT_ROOT}}"
 TELEOP_ENTRY="${XR_TELEOP_ROOT}/teleop/teleop_hand_and_arm.py"
 EE_MODE="${EE_MODE:-dex1_internal}"
 DISPLAY_MODE="${DISPLAY_MODE:-immersive}"
-VOICE_LANGUAGE="${VOICE_LANGUAGE:-bilingual}"
+VOICE_LANGUAGE="${VOICE_LANGUAGE:-zh}"
 
 if [[ ! -f "${TELEOP_ENTRY}" ]]; then
   echo "XR teleop entry not found: ${TELEOP_ENTRY}" >&2

@@ -12,6 +12,7 @@ import argparse
 from multiprocessing import Value, Array, Lock
 import threading
 import queue
+import json
 import numpy as np
 import os 
 import sys
@@ -60,7 +61,7 @@ EPISODE_ID     = 0      # Episode ID (int) for IPC communication
 class VoiceAnnouncer:
     """Non-blocking Mandarin/English announcements through the G1 voice service."""
 
-    def __init__(self, enabled=True, language="bilingual"):
+    def __init__(self, enabled=True, language="zh"):
         self.enabled = enabled and AudioClient is not None
         self.language = language
         self.messages = queue.Queue(maxsize=16)
@@ -147,7 +148,10 @@ class ControllerShortcutMapper:
             )
             logger_mp.info("Pico right A -> R: teleoperation started")
         if current["left_y"] and not self.previous["left_y"]:
-            if START and READY and not RECORD_TOGGLE:
+            # READY is false for the whole time an episode is open.  A stop
+            # request must therefore be accepted while RECORD_RUNNING is true;
+            # READY only gates creation of the next episode.
+            if START and not RECORD_TOGGLE and (RECORD_RUNNING or READY):
                 starting = not RECORD_RUNNING
                 on_press("s")
                 if starting:
@@ -188,7 +192,7 @@ class ControllerShortcutMapper:
 #                                ∨                          ∨                          ∨
 #   RECORD_TOGGLE   False       True          False        True          False                  False
 #  -------        ---------                -----------                 -----------            ---------
-#  ==> manual: when READY is True, set RECORD_TOGGLE=True to transition.
+#  ==> manual: READY starts an episode; RECORD_RUNNING always permits stopping it.
 #  --> auto  : Auto-transition after saving data.
 
 def on_press(key, episode_id=None):
@@ -232,7 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('--sim', action = 'store_true', help = 'Enable isaac simulation mode')
     parser.add_argument('--ipc', action = 'store_true', help = 'Enable IPC server to handle input; otherwise enable sshkeyboard')
     parser.add_argument('--no-voice', action='store_true', help='Disable status announcements')
-    parser.add_argument('--voice-language', choices=['zh', 'en', 'bilingual'], default='bilingual', help='Status announcement language')
+    parser.add_argument('--voice-language', choices=['zh', 'en', 'bilingual'], default='zh', help='Status announcement language')
     parser.add_argument('--img-server-ip', type=str, default='192.168.123.164', help='IP address of image server')
     parser.add_argument('--xr-webrtc-host', type=str, default=None, help='Image-server address reachable by the XR headset; defaults to img-server-ip')
     parser.add_argument('--network-interface', type=str, default=None, help='Network interface for dds communication, e.g., eth0, wlan0. If None, use default interface.')
@@ -414,6 +418,9 @@ if __name__ == '__main__':
                                      task_steps = args.task_steps,
                                      frequency = args.frequency, 
                                      rerun_log = not args.headless)
+            save_pending = False
+            pending_episode_id = None
+            pending_episode_path = None
 
         logger_mp.info("Please enter the start signal (enter 'r' to start the subsequent program)")
         announcer.say(
@@ -451,8 +458,15 @@ if __name__ == '__main__':
                         logger_mp.error("Failed to create episode. Recording not started.")
                 else:
                     RECORD_RUNNING = False
+                    pending_episode_id = recorder.episode_id
+                    pending_episode_path = recorder.json_path
+                    queued_frames = recorder.item_data_queue.qsize()
                     recorder.save_episode()
-                    announcer.say("采集已保存", "Recording saved.")
+                    save_pending = True
+                    logger_mp.info(
+                        f"==> Episode {pending_episode_id:04d} recording stopped; "
+                        f"flushing {queued_frames} queued frame(s) to {pending_episode_path}"
+                    )
                     if args.sim:
                         publish_reset_category(1, reset_pose_publisher)
             
@@ -543,6 +557,30 @@ if __name__ == '__main__':
             # record data
             if args.record:
                 READY = recorder.is_ready() # now ready to (2) enter RECORD_RUNNING state
+                if save_pending and READY:
+                    try:
+                        with open(pending_episode_path, "r", encoding="utf-8") as episode_file:
+                            saved_episode = json.load(episode_file)
+                        saved_frames = len(saved_episode.get("data", []))
+                        saved_bytes = os.path.getsize(pending_episode_path)
+                        logger_mp.info(
+                            f"==> Episode {pending_episode_id:04d} save verified: "
+                            f"{saved_frames} frame(s), {saved_bytes / (1024 * 1024):.2f} MiB, "
+                            f"path={pending_episode_path}"
+                        )
+                        announcer.say(
+                            f"第{pending_episode_id}段采集保存完成，共{saved_frames}帧，可以开始下一段",
+                            f"Episode {pending_episode_id} saved with {saved_frames} frames. Ready for the next episode.",
+                        )
+                    except Exception as e:
+                        logger_mp.error(
+                            f"Episode {pending_episode_id:04d} save verification failed: {e}"
+                        )
+                        announcer.say(
+                            f"第{pending_episode_id}段保存校验失败，请查看终端",
+                            f"Episode {pending_episode_id} save verification failed. Check the terminal.",
+                        )
+                    save_pending = False
                 # dex hand or gripper
                 if args.ee == "dex3" and args.input_mode == "hand":
                     with dual_hand_data_lock:
